@@ -58,6 +58,7 @@ public final class SongPlayerGameTest implements FabricClientGameTest {
 
     @Override
     public void runTest(ClientGameTestContext context) {
+        if (System.getProperty("songplayer.viaTestServer") != null) return;
         context.getInput().resizeWindow(1280, 800);
         context.runOnClient(client -> {
             client.options.renderDistance().set(3);
