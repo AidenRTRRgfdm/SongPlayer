@@ -9,13 +9,16 @@ import com.github.hhhzzzsss.songplayer.song.Playlist;
 import com.github.hhhzzzsss.songplayer.song.Song;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import net.minecraft.command.CommandSource;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.*;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.world.GameMode;
-
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.GameType;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -169,7 +172,7 @@ public class CommandProcessor {
 			return true;
 		}
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
-			return CommandSource.suggestMatching(commandCompletions, suggestionsBuilder);
+			return SharedSuggestionProvider.suggest(commandCompletions, suggestionsBuilder);
 		}
 	}
 
@@ -219,7 +222,7 @@ public class CommandProcessor {
 		}
 		public boolean processCommand(String args) {
 			if (args.length() > 0) {
-				if (Config.getConfig().survivalOnly && SongPlayer.MC.interactionManager.getCurrentGameMode() != GameMode.SURVIVAL) {
+				if (Config.getConfig().survivalOnly && SongPlayer.MC.gameMode.getPlayerMode() != GameType.SURVIVAL) {
 					Util.showChatMessage("§cTo play in survival only mode, you must be in survival mode to start with.");
 					return true;
 				}
@@ -646,7 +649,7 @@ public class CommandProcessor {
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			String[] split = args.split(" ", -1);
 			if (split.length <= 1) {
-				return CommandSource.suggestMatching(new String[]{
+				return SharedSuggestionProvider.suggest(new String[]{
 						"play",
 						"create",
 						"delete",
@@ -691,7 +694,7 @@ public class CommandProcessor {
 						if (playlistFiles == null) {
 							return null;
 						}
-						return CommandSource.suggestMatching(
+						return SharedSuggestionProvider.suggest(
 								playlistFiles.map(Path::getFileName)
 										.map(Path::toString),
 								suggestionsBuilder);
@@ -709,7 +712,7 @@ public class CommandProcessor {
 						}
 						int max = playlistFiles.collect(Collectors.toList()).size();
 						Stream<String> suggestions = IntStream.range(1, max+1).mapToObj(Integer::toString);
-						return CommandSource.suggestMatching(suggestions, suggestionsBuilder);
+						return SharedSuggestionProvider.suggest(suggestions, suggestionsBuilder);
 					}
 					return null;
 				}
@@ -894,7 +897,7 @@ public class CommandProcessor {
 		}
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			if (!args.contains(" ")) {
-				return CommandSource.suggestMatching(Arrays.stream(Stage.StageType.values()).map(Stage.StageType::name), suggestionsBuilder);
+				return SharedSuggestionProvider.suggest(Arrays.stream(Stage.StageType.values()).map(Stage.StageType::name), suggestionsBuilder);
 			}
 			else {
 				return null;
@@ -952,7 +955,7 @@ public class CommandProcessor {
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			String[] split = args.split(" ", -1);
 			if (split.length <= 1) {
-				return CommandSource.suggestMatching(new String[]{
+				return SharedSuggestionProvider.suggest(new String[]{
 						"set",
 						"reset",
 				}, suggestionsBuilder);
@@ -1012,7 +1015,7 @@ public class CommandProcessor {
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			String[] split = args.split(" ", -1);
 			if (split.length <= 1) {
-				return CommandSource.suggestMatching(new String[]{
+				return SharedSuggestionProvider.suggest(new String[]{
 						"set",
 						"reset",
 				}, suggestionsBuilder);
@@ -1063,7 +1066,7 @@ public class CommandProcessor {
 		}
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			if (!args.contains(" ")) {
-				return CommandSource.suggestMatching(new String[]{"swing", "rotate"}, suggestionsBuilder);
+				return SharedSuggestionProvider.suggest(new String[]{"swing", "rotate"}, suggestionsBuilder);
 			}
 			else {
 				return null;
@@ -1160,23 +1163,23 @@ public class CommandProcessor {
 					Util.showChatMessage("§6There is nothing to clean up");
 					return true;
 				}
-				if (MC.player.getEntityPos().squaredDistanceTo(lastStage.getOriginBottomCenter()) > 3*3 || !lastStage.worldName.equals(Util.getWorldName())) {
+				if (MC.player.position().distanceToSqr(lastStage.getOriginBottomCenter()) > 3*3 || !lastStage.worldName.equals(Util.getWorldName())) {
 					String coordStr = String.format(
 							"%d %d %d",
 							lastStage.position.getX(), lastStage.position.getY(), lastStage.position.getZ()
 					);
 					Util.showChatMessage("§6You must be within §33 §6blocks of the center of your stage to start cleanup.");
-					MutableText coordText = Util.joinTexts(null,
-							Text.literal("This is at ").setStyle(Style.EMPTY.withColor(Formatting.GOLD)),
-							Text.literal(coordStr).setStyle(
+					MutableComponent coordText = Util.joinTexts(null,
+							Component.literal("This is at ").setStyle(Style.EMPTY.withColor(ChatFormatting.GOLD)),
+							Component.literal(coordStr).setStyle(
 									Style.EMPTY
-											.withColor(Formatting.DARK_AQUA)
-											.withUnderline(true)
+											.withColor(ChatFormatting.DARK_AQUA)
+											.withUnderlined(true)
 											.withClickEvent(new ClickEvent.CopyToClipboard(coordStr))
-											.withHoverEvent(new HoverEvent.ShowText(Text.literal("Copy \"" + coordStr + "\"")))
+											.withHoverEvent(new HoverEvent.ShowText(Component.literal("Copy \"" + coordStr + "\"")))
 							),
-							Text.literal(" in world ").setStyle(Style.EMPTY.withColor(Formatting.GOLD)),
-							Text.literal(lastStage.worldName).setStyle(Style.EMPTY.withColor(Formatting.DARK_AQUA))
+							Component.literal(" in world ").setStyle(Style.EMPTY.withColor(ChatFormatting.GOLD)),
+							Component.literal(lastStage.worldName).setStyle(Style.EMPTY.withColor(ChatFormatting.DARK_AQUA))
 					);
 					Util.showChatMessage(coordText);
 					return true;
@@ -1237,7 +1240,7 @@ public class CommandProcessor {
 		}
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			if (!args.contains(" ")) {
-				return CommandSource.suggestMatching(new String[]{"enable", "disable", "getMessage", "setMessage"}, suggestionsBuilder);
+				return SharedSuggestionProvider.suggest(new String[]{"enable", "disable", "getMessage", "setMessage"}, suggestionsBuilder);
 			}
 			else {
 				return null;
@@ -1333,12 +1336,12 @@ public class CommandProcessor {
 				return false;
 			}
 
-			if (MC.interactionManager.getCurrentGameMode() != GameMode.CREATIVE) {
+			if (MC.gameMode.getPlayerMode() != GameType.CREATIVE) {
 				Util.showChatMessage("§cYou must be in creative mode to use this command");
 				return true;
 			}
 
-			ItemStack stack = MC.player.getMainHandStack();
+			ItemStack stack = MC.player.getMainHandItem();
 
 			String[] split = args.split(" ");
 			switch (split[0].toLowerCase(Locale.ROOT)) {
@@ -1358,8 +1361,8 @@ public class CommandProcessor {
 						String name = String.join(" ", Arrays.copyOfRange(split, 1, split.length));
 						SongItemUtils.updateSongItemTag(stack, (songItemTag) -> songItemTag.putString(SongItemUtils.DISPLAY_NAME_KEY, name));
 						SongItemUtils.addSongItemDisplay(stack);
-						MC.player.setStackInHand(Hand.MAIN_HAND, stack);
-						MC.interactionManager.clickCreativeStack(MC.player.getStackInHand(Hand.MAIN_HAND), 36 + MC.player.getInventory().getSelectedSlot());
+						MC.player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+						MC.gameMode.handleCreativeModeItemAdd(MC.player.getItemInHand(InteractionHand.MAIN_HAND), 36 + MC.player.getInventory().getSelectedSlot());
 						Util.showChatMessage("§6Set song display name to §3" + name);
 						return true;
 					} else {
@@ -1373,7 +1376,7 @@ public class CommandProcessor {
 		public CompletableFuture<Suggestions> getSuggestions(String args, SuggestionsBuilder suggestionsBuilder) {
 			String[] split = args.split(" ", -1);
 			if (split.length <= 1) {
-				return CommandSource.suggestMatching(new String[]{
+				return SharedSuggestionProvider.suggest(new String[]{
 						"create",
 						"setSongName",
 				}, suggestionsBuilder);
@@ -1423,7 +1426,7 @@ public class CommandProcessor {
 					.stream()
 					.map((commandName) -> Config.getConfig().prefix+commandName)
 					.collect(Collectors.toList());
-			return CommandSource.suggestMatching(names, suggestionsBuilder);
+			return SharedSuggestionProvider.suggest(names, suggestionsBuilder);
 		} else {
 			String[] split = text.split(" ", 2);
 			if (split[0].startsWith(Config.getConfig().prefix)) {

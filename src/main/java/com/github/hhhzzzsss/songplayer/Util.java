@@ -2,17 +2,6 @@ package com.github.hhhzzzsss.songplayer;
 
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.command.CommandSource;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.LoreComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.PlainTextContent;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.util.WorldSavePath;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -25,9 +14,19 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import net.minecraft.client.Minecraft;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.contents.PlainTextContents;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.ItemLore;
+import net.minecraft.world.level.storage.LevelResource;
 
 public class Util {
-    static final MinecraftClient MC = MinecraftClient.getInstance();
+    static final Minecraft MC = Minecraft.getInstance();
 
     // IO
 
@@ -168,13 +167,13 @@ public class Util {
         Stream<String> suggestions = suggestionsList.stream()
                 .filter(str -> str.startsWith(arg))
                 .map(str -> str.substring(clipStart));
-        return CommandSource.suggestMatching(suggestions, suggestionsBuilder);
+        return SharedSuggestionProvider.suggest(suggestions, suggestionsBuilder);
     }
 
     public static CompletableFuture<Suggestions> givePlaylistSuggestions(SuggestionsBuilder suggestionsBuilder) {
         if (!Files.exists(SongPlayer.PLAYLISTS_DIR)) return null;
         try {
-            return CommandSource.suggestMatching(
+            return SharedSuggestionProvider.suggest(
                     Files.list(SongPlayer.PLAYLISTS_DIR)
                             .filter(Files::isDirectory)
                             .map(Path::getFileName)
@@ -222,30 +221,30 @@ public class Util {
                 .map(path -> dirString + path.getFileName().toString() + "/")
                 .filter(str -> str.startsWith(arg))
                 .map(str -> str.substring(clipStart));
-        return CommandSource.suggestMatching(suggestions, suggestionsBuilder);
+        return SharedSuggestionProvider.suggest(suggestions, suggestionsBuilder);
     }
 
     // Text
 
-    public static MutableText getStyledText(String str, Style style) {
-        MutableText text = MutableText.of(PlainTextContent.of(str));
+    public static MutableComponent getStyledText(String str, Style style) {
+        MutableComponent text = MutableComponent.create(PlainTextContents.create(str));
         text.setStyle(style);
         return text;
     }
 
-    public static void setItemName(ItemStack stack, Text text) {
-        stack.set(DataComponentTypes.CUSTOM_NAME, text);
+    public static void setItemName(ItemStack stack, Component text) {
+        stack.set(DataComponents.CUSTOM_NAME, text);
     }
 
-    public static void setItemLore(ItemStack stack, Text... loreLines) {
-        stack.set(DataComponentTypes.LORE, new LoreComponent(List.of(loreLines)));
+    public static void setItemLore(ItemStack stack, Component... loreLines) {
+        stack.set(DataComponents.LORE, new ItemLore(List.of(loreLines)));
     }
 
-    public static MutableText joinTexts(MutableText base, Text... children) {
+    public static MutableComponent joinTexts(MutableComponent base, Component... children) {
         if (base == null) {
-            base = Text.empty();
+            base = Component.empty();
         }
-        for (Text child : children) {
+        for (Component child : children) {
             base.append(child);
         }
         return base;
@@ -254,28 +253,28 @@ public class Util {
     // Server and World
 
     public static String getWorldName() {
-        return MC.world.getRegistryKey().getValue().toString();
+        return MC.level.dimension().identifier().toString();
     }
 
     public static String getServerIdentifier() {
-        if (MC.isInSingleplayer()) return "local;" + MC.getServer().getSavePath(WorldSavePath.ROOT).getParent().getFileName().toString();
-        else return "remote;" + MC.getCurrentServerEntry().address;
+        if (MC.isLocalServer()) return "local;" + MC.getSingleplayerServer().getWorldPath(LevelResource.ROOT).getParent().getFileName().toString();
+        else return "remote;" + MC.getCurrentServer().ip;
     }
 
     // Chat
     public static void showChatMessage(String message) {
-        MC.player.sendMessage(Text.of(message), false);
+        MC.gui.hud.getChat().addClientSystemMessage(Component.nullToEmpty(message));
     }
 
-    public static void showChatMessage(Text text) {
-        MC.player.sendMessage(text, false);
+    public static void showChatMessage(Component text) {
+        MC.gui.hud.getChat().addClientSystemMessage(text);
     }
 
     public static void sendChatMessage(String message) {
-        MC.player.networkHandler.sendChatMessage(message);
+        MC.player.connection.sendChat(message);
     }
 
     public static void sendCommand(String command) {
-        MC.player.networkHandler.sendChatCommand(command);
+        MC.player.connection.sendCommand(command);
     }
 }
