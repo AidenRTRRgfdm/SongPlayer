@@ -1,3 +1,35 @@
+# SongPlayer for Minecraft 26.2
+
+Unofficial Fabric port of hhhzzzsss/SongPlayer 3.3.5, based on upstream commit
+`36f9d1f3dda4cd7b5728e6e4fb54e0a95ff9c9d8`.
+
+See [how this port was made](docs/PORTING-26.2.md) for the migration steps,
+API changes, runtime fixes, and reproducible test commands.
+
+Requires Minecraft **26.2**, **Java 25**, Fabric Loader **0.19.3 or newer**, and
+Fabric API **0.160.0+26.2 or newer for 26.2**. Copy `song-player-3.3.5+26.2.jar`
+into the instance's `mods` folder and replace any older SongPlayer JAR.
+
+Put MIDI or NBS files in the instance's `songs` folder. Use `$play filename.mid`
+or `$play filename.nbs`; `$help` lists the commands. Automatic stage building
+requires creative mode or permission to change game modes. Survival-only mode
+uses existing noteblocks.
+
+Build with a Java 25 JDK selected by `JAVA_HOME`:
+
+```sh
+./gradlew build
+./gradlew runClientGameTest
+```
+
+The tests use a disposable local world. The port preserves SongPlayer's existing
+16-instrument song format. It identifies noteblocks by their named properties,
+so the additional 26.2 instruments do not change existing note IDs.
+
+Original project documentation follows.
+
+---
+
 # SongPlayer
 A Fabric mod for Minecraft that plays songs with noteblocks.
 
