@@ -10,6 +10,7 @@ import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 public final class StageMovementPackets {
     private static Connection currentConnection;
     private static boolean positionSent;
+    private static boolean stagePositionSent;
     private static boolean handlingServerPositionCorrection;
     private static float lastYaw;
     private static float lastPitch;
@@ -20,6 +21,7 @@ public final class StageMovementPackets {
         if (currentConnection != connection) {
             currentConnection = connection;
             positionSent = false;
+            stagePositionSent = false;
             handlingServerPositionCorrection = false;
             lastYaw = 0;
             lastPitch = 0;
@@ -33,6 +35,7 @@ public final class StageMovementPackets {
         useConnection(connection);
         if (packet instanceof ServerboundClientTickEndPacket) {
             positionSent = false;
+            stagePositionSent = false;
         } else if (packet instanceof ServerboundMovePlayerPacket movement) {
             // Count teleport acknowledgement follow-ups conservatively too. ViaFabricPlus
             // may translate them into a separate acknowledgement packet on newer servers.
@@ -63,7 +66,26 @@ public final class StageMovementPackets {
 
     public static synchronized void sendStageMovement(
             Connection connection, BlockPos position, float yaw, float pitch) {
-        connection.send(createStagePacket(connection, position, yaw, pitch));
+        ServerboundMovePlayerPacket packet = createStagePacket(connection, position, yaw, pitch);
+        connection.send(packet);
+        if (packet.hasPosition()) stagePositionSent = true;
+    }
+
+    /** Leave ordinary idle movement alone, except when returning control after a stage update. */
+    public static synchronized Packet<?> rewriteAfterStageHandoff(
+            Connection connection, Packet<?> packet, boolean songIdle) {
+        useConnection(connection);
+        if (!songIdle || !stagePositionSent || !positionSent || handlingServerPositionCorrection
+                || !(packet instanceof ServerboundMovePlayerPacket movement) || !movement.hasPosition()) {
+            return packet;
+        }
+        // $stop can return control to vanilla before this tick's stage position has
+        // reached CLIENT_TICK_END. Defer only its new position; retain look and flags.
+        if (movement.hasRotation()) {
+            return new ServerboundMovePlayerPacket.Rot(movement.getYRot(lastYaw), movement.getXRot(lastPitch),
+                    movement.isOnGround(), movement.horizontalCollision());
+        }
+        return new ServerboundMovePlayerPacket.StatusOnly(movement.isOnGround(), movement.horizontalCollision());
     }
 
     public static synchronized void beginServerPositionCorrection(Connection connection) {
