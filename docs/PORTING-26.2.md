@@ -2,6 +2,8 @@
 
 This fork ports SongPlayer 3.3.5 from Minecraft 1.21.9 to 26.2, retaining its song formats, local commands, stage construction, playback, song items, survival tuning, and cleanup. The starting point was upstream commit [`36f9d1f3dda4cd7b5728e6e4fb54e0a95ff9c9d8`](https://github.com/hhhzzzsss/SongPlayer/commit/36f9d1f3dda4cd7b5728e6e4fb54e0a95ff9c9d8), titled “Fix fakeplayer crash.”
 
+The current version is `3.3.5+26.2.1`. Its additional movement changes for ViaFabricPlus connections to 26.3 servers are explained in [the cross-version fix notes](VIAFABRICPLUS-26.3-FIX.md).
+
 ## 1. Convert names while the old Minecraft version still matches
 
 Minecraft 26.2 uses the unobfuscated official names. The old Java code used Yarn names, so the first step was a source migration in a separate scratch checkout. Fabric's [Loom migration guide](https://docs.fabricmc.net/1.21.11/develop/porting/mappings/loom) requires the migration target to match the Minecraft version currently configured in the project.
@@ -39,14 +41,16 @@ The final settings are in [gradle.properties](../gradle.properties), [build.grad
 | Loom | `1.14-SNAPSHOT` | `1.17.20` |
 | Loom plugin | `net.fabricmc.fabric-loom-remap` | `net.fabricmc.fabric-loom` |
 | Mappings | Yarn `1.21.9+build.1:v2` | No mappings dependency |
-| Fabric Loader | `0.18.4` | `0.19.3` |
+| Fabric Loader | `0.18.4` | `0.19.5` |
 | Fabric API | `0.134.1+1.21.9` | `0.160.0+26.2` |
 | Dependency configuration | `modImplementation` | `implementation` |
-| Mod version | `3.3.5` | `3.3.5+26.2` |
+| Mod version | `3.3.5` | `3.3.5+26.2.1` |
 
 The unobfuscated Loom plugin produces the runtime JAR directly. [Fabric's 26.1 build migration instructions](https://docs.fabricmc.net/26.1.2/develop/porting/) explain the plugin change, removal of mappings, ordinary dependency configurations, and Java 25 requirement; [the 26.2 porting guide](https://docs.fabricmc.net/develop/porting/) covers updating the target dependencies.
 
-[fabric.mod.json](../src/main/resources/fabric.mod.json) now declares a client mod, Minecraft `~26.2`, Java `>=25`, Loader `>=0.19.3`, and Fabric API `>=0.160.0`. The Mixin compatibility level is `JAVA_25`.
+[fabric.mod.json](../src/main/resources/fabric.mod.json) now declares a client mod, Minecraft `~26.2`, Java `>=25`, Loader `>=0.19.5`, and Fabric API `>=0.160.0`. The Mixin compatibility level is `JAVA_25`.
+
+The initial port used Loader `0.19.3`. The current release uses `0.19.5`, which bundles MixinExtras `0.5.5`; the older Loader bundled `0.5.4`. This resolves the ViaFabricPlus 5.0.2 array `@Redirect` startup failure observed in the development test runtime. See [the cross-version setup notes](VIAFABRICPLUS-26.3-FIX.md#loader-requirement) for the source references and supported minimum.
 
 ## 3. Adapt Minecraft APIs and Mixin targets
 
@@ -101,6 +105,8 @@ Compilation alone did not catch two runtime failures.
 
 **Cleanup mode race:** another run reached cleanup but stalled in survival mode. A survival request sent at the end of building could be acknowledged after cleanup started. [SongHandler.handleCleanup](../src/main/java/com/github/hhhzzzsss/songplayer/playing/SongHandler.java) now calls `setCreativeIfNeeded()` each cleanup tick, using the existing command cooldown. That helper clears the queued command first and only queues a creative request when the client is still in another mode. Once creative mode is acknowledged, the pending retry is cleared so it cannot switch a later survival playback session back to creative.
 
+**26.3 movement contract:** the later `3.3.5+26.2.1` update sends at most one stage position per client tick, then rotation-only updates, and preserves vanilla teleport acknowledgements. This addresses the additional position-packet restriction found in the official 26.3 server. See [the source evidence, implementation, and opt-in network test](VIAFABRICPLUS-26.3-FIX.md).
+
 ## 6. Build and reproduce verification
 
 From a checkout of this fork, use a full Java 25 JDK:
@@ -113,14 +119,16 @@ java -version
 ./gradlew runClientGameTest
 ```
 
-`build` runs the seven JUnit tests and produces `build/libs/song-player-3.3.5+26.2.jar` plus the separate sources JAR. Unit-test results are available in `build/reports/tests/test/index.html` and `build/test-results/test/`.
+`build` runs the fifteen JUnit tests and produces `build/libs/song-player-3.3.5+26.2.1.jar` plus the separate sources JAR. Unit-test results are available in `build/reports/tests/test/index.html` and `build/test-results/test/`.
 
-The verified unit run reported **7 tests, 0 failures, 0 errors, 0 skipped**:
+The final Loader `0.19.5` build passed: **15 tests, 0 failures, 0 errors, 0 skipped**:
 
 | Test source | Contracts checked |
 | --- | --- |
 | [TxtConverterTest](../src/test/java/com/github/hhhzzzsss/songplayer/conversion/TxtConverterTest.java), 2 tests | Comments and CRLF input; highest supported instrument; malformed input reports the actual source line |
 | [SongTest](../src/test/java/com/github/hhhzzzsss/songplayer/song/SongTest.java), 5 tests | Chord ordering and required notes; seek boundaries; finite loops with elapsed remainder; infinite loops and reset; repeated `play()` preserves the start time |
+| [StageMovementPacketsTest](../src/test/java/com/github/hhhzzzsss/songplayer/playing/StageMovementPacketsTest.java), 5 tests | One position per tick; an earlier vanilla position shares the allowance; rotation-only updates; connection reset; teleport guard and finite-angle fallback |
+| [NBSConverterTest](../src/test/java/com/github/hhhzzzsss/songplayer/conversion/NBSConverterTest.java), 3 tests | Long-song timestamps across integer overflow; unsigned tick jumps; cumulative tick counts beyond 65,535 |
 
 [SongPlayerGameTest](../src/gametest/java/com/github/hhhzzzsss/songplayer/test/SongPlayerGameTest.java) launches the real Fabric client and creates a disposable integrated-server world. Its probes observe outgoing chat and received server note packets. The fixture verifies:
 
@@ -132,12 +140,16 @@ The verified unit run reported **7 tests, 0 failures, 0 errors, 0 skipped**:
 - Fake-player attachment, rebuilding a changed stage, automatic cleanup, original block states, hotbar contents, and original creative mode restoration.
 - Survival-only tuning and playback, plus playback reset after disconnect.
 
-The final client run completed successfully and printed:
+The initial `3.3.5+26.2` port's client run completed successfully and printed:
 
 ```text
 SONGPLAYER_26_2_GAMETEST_PASS: 800 semantic note states; new instruments excluded; chat command interception and native autocomplete; SP format and NBT item persistence; confirmation Cancel/Play; creative stage construction; server note events; fake player; altered-stage rebuild; inventory and block cleanup; survival tuning
 ```
 
 The test configuration accepts the Minecraft EULA for its disposable test run and captures screenshots of autocomplete, confirmation, the playing stage, and restored terrain. The test source set and its probe Mixins are separate from the distributed mod JAR.
+
+For `3.3.5+26.2.1`, the final native 26.2 client rerun with Loader `0.19.5` **passed** in 26 seconds and printed the same marker. It checked all 800 semantic note states and the complete feature fixture listed above, including construction, real note events, rebuilding, cleanup, inventory restoration, and survival tuning.
+
+The separate 26.2 → ViaFabricPlus 5.0.2 → native 26.3 loopback-server test **passed** with Loader `0.19.5`. It reproduced the exact duplicate-position disconnect, verified the rotation-only control, and completed construction, playback, teleport acknowledgement handling, and cleanup with both rotation settings, plus stopping during construction. Its final marker was `SONGPLAYER_VIA_26_3_GAMETEST_PASS`. The [cross-version fix notes](VIAFABRICPLUS-26.3-FIX.md) include the full result and reproduction command.
 
 This validation uses an integrated server. A particular multiplayer server's permissions, custom gamemode commands, packet restrictions, and interaction rules still determine which SongPlayer features can run there.
