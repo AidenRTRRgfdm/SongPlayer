@@ -6,15 +6,18 @@ Unofficial Fabric port of hhhzzzsss/SongPlayer 3.3.5, based on upstream commit
 See [how this port was made](docs/PORTING-26.2.md) for the migration steps,
 API changes, runtime fixes, and reproducible test commands.
 
-Version **3.3.5+26.2.1** includes the [movement fix for ViaFabricPlus connections
-to Minecraft 26.3 servers](docs/VIAFABRICPLUS-26.3-FIX.md).
-The cross-version fixture passed with ViaFabricPlus **5.0.2** against a
-disposable native 26.3 server, including both rotation settings and cleanup.
-The final native 26.2 client test and all **15 unit tests** also passed.
+Version **3.3.5+26.2.2** includes the [movement fixes for ViaFabricPlus connections
+to Minecraft 26.3 servers](docs/VIAFABRICPLUS-26.3-FIX.md), including the handoff
+to normal movement after `$stop` with automatic cleanup disabled.
+The build and all **21 unit tests** passed. The expanded ViaFabricPlus fixture
+passed against a disposable native 26.3 server, including stopping without
+cleanup with rotation off and on, and interrupting cleanup with a second stop.
+The final native 26.2 client test also passed, including all 800 note states
+and the complete playback and restoration fixture.
 
 Requires Minecraft **26.2**, **Java 25**, Fabric Loader **0.19.5 or newer**, and
 Fabric API **0.160.0+26.2 or newer for 26.2**. Download
-[`song-player-3.3.5+26.2.1.jar`](https://github.com/AidenRTRRgfdm/SongPlayer/releases/download/v3.3.5-mc26.2.1/song-player-3.3.5%2B26.2.1.jar)
+[`song-player-3.3.5+26.2.2.jar`](https://github.com/AidenRTRRgfdm/SongPlayer/releases/download/v3.3.5-mc26.2.2/song-player-3.3.5%2B26.2.2.jar)
 into the instance's `mods` folder and replace any older SongPlayer JAR.
 
 Put MIDI or NBS files in the instance's `songs` folder. Use `$play filename.mid`
