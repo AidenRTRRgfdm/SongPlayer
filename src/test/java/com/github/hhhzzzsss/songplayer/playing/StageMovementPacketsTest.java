@@ -2,6 +2,7 @@ package com.github.hhhzzzsss.songplayer.playing;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.PacketFlow;
 import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
@@ -71,5 +72,100 @@ class StageMovementPacketsTest {
         assertEquals(60, packet.getYRot(0));
         assertEquals(-25, packet.getXRot(0));
         assertTrue(Float.isFinite(packet.getYRot(0)) && Float.isFinite(packet.getXRot(0)));
+    }
+
+    @Test
+    void stopHandoffPreservesVanillaLookAndFlagsWithoutASecondPosition() {
+        CapturingConnection connection = new CapturingConnection();
+        StageMovementPackets.sendStageMovement(connection, STAGE, 10, -20);
+        assertTrue(((ServerboundMovePlayerPacket) connection.sent).hasPosition());
+        var vanilla = new ServerboundMovePlayerPacket.PosRot(13, 70, -7, 91, -37, false, true);
+        var rewritten = (ServerboundMovePlayerPacket) StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true);
+        assertInstanceOf(ServerboundMovePlayerPacket.Rot.class, rewritten);
+        assertFalse(rewritten.hasPosition());
+        assertEquals(91, rewritten.getYRot(0));
+        assertEquals(-37, rewritten.getXRot(0));
+        assertFalse(rewritten.isOnGround());
+        assertTrue(rewritten.horizontalCollision());
+    }
+
+    @Test
+    void stopHandoffPreservesPositionOnlyPacketsGroundAndCollisionStatus() {
+        CapturingConnection connection = new CapturingConnection();
+        StageMovementPackets.sendStageMovement(connection, STAGE, 0, 0);
+        for (boolean ground : new boolean[]{false, true}) {
+            for (boolean collision : new boolean[]{false, true}) {
+                var vanilla = new ServerboundMovePlayerPacket.Pos(13, 70, -7, ground, collision);
+                var rewritten = (ServerboundMovePlayerPacket) StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true);
+                assertInstanceOf(ServerboundMovePlayerPacket.StatusOnly.class, rewritten);
+                assertFalse(rewritten.hasPosition());
+                assertFalse(rewritten.hasRotation());
+                assertEquals(ground, rewritten.isOnGround());
+                assertEquals(collision, rewritten.horizontalCollision());
+            }
+        }
+    }
+
+    @Test
+    void ordinaryIdleMovementAndStageReservationDoNotArmHandoffGuard() {
+        Connection connection = new Connection(PacketFlow.CLIENTBOUND);
+        var vanilla = new ServerboundMovePlayerPacket.PosRot(13, 70, -7, 91, -37, false, true);
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true));
+        StageMovementPackets.observeOutgoing(connection, vanilla);
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true));
+
+        Connection reserved = new Connection(PacketFlow.CLIENTBOUND);
+        assertTrue(StageMovementPackets.createStagePacket(reserved, STAGE, 0, 0).hasPosition());
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(reserved, vanilla, true),
+                "Creating an unsent stage packet must not rewrite ordinary vanilla movement");
+    }
+
+    @Test
+    void rotationOnlyStageEmissionAfterVanillaPositionDoesNotArmHandoffGuard() {
+        CapturingConnection connection = new CapturingConnection();
+        var vanilla = new ServerboundMovePlayerPacket.Pos(13, 70, -7, true, false);
+        StageMovementPackets.observeOutgoing(connection, vanilla);
+        StageMovementPackets.sendStageMovement(connection, STAGE, 45, 10);
+        assertFalse(((ServerboundMovePlayerPacket) connection.sent).hasPosition());
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true));
+    }
+
+    @Test
+    void tickEndAndReconnectRestoreUnmodifiedIdleMovement() {
+        CapturingConnection connection = new CapturingConnection();
+        var vanilla = new ServerboundMovePlayerPacket.Pos(13, 70, -7, true, false);
+        StageMovementPackets.sendStageMovement(connection, STAGE, 0, 0);
+        assertNotSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true));
+        StageMovementPackets.observeOutgoing(connection, ServerboundClientTickEndPacket.INSTANCE);
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true));
+
+        StageMovementPackets.sendStageMovement(connection, STAGE, 0, 0);
+        Connection next = new Connection(PacketFlow.CLIENTBOUND);
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(next, vanilla, true));
+    }
+
+    @Test
+    void activeSongAndVanillaTeleportCorrectionPassThroughHandoffGuard() {
+        CapturingConnection connection = new CapturingConnection();
+        var vanilla = new ServerboundMovePlayerPacket.PosRot(13, 70, -7, 91, -37, false, true);
+        StageMovementPackets.sendStageMovement(connection, STAGE, 0, 0);
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, false));
+        StageMovementPackets.beginServerPositionCorrection(connection);
+        assertSame(vanilla, StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true),
+                "Vanilla server teleport acknowledgement follow-ups must retain their positions");
+        StageMovementPackets.endServerPositionCorrection(connection);
+        assertFalse(((ServerboundMovePlayerPacket) StageMovementPackets.rewriteAfterStageHandoff(connection, vanilla, true)).hasPosition());
+    }
+
+    private static final class CapturingConnection extends Connection {
+        private Packet<?> sent;
+
+        private CapturingConnection() { super(PacketFlow.CLIENTBOUND); }
+
+        @Override
+        public void send(Packet<?> packet) {
+            sent = packet;
+            StageMovementPackets.observeOutgoing(this, packet);
+        }
     }
 }
