@@ -6,8 +6,15 @@ Unofficial Fabric port of hhhzzzsss/SongPlayer 3.3.5, based on upstream commit
 See [how this port was made](docs/PORTING-26.2.md) for the migration steps,
 API changes, runtime fixes, and reproducible test commands.
 
-Requires Minecraft **26.2**, **Java 25**, Fabric Loader **0.19.3 or newer**, and
-Fabric API **0.160.0+26.2 or newer for 26.2**. Copy `song-player-3.3.5+26.2.jar`
+Version **3.3.5+26.2.1** includes the [movement fix for ViaFabricPlus connections
+to Minecraft 26.3 servers](docs/VIAFABRICPLUS-26.3-FIX.md).
+The cross-version fixture passed with ViaFabricPlus **5.0.2** against a
+disposable native 26.3 server, including both rotation settings and cleanup.
+The final native 26.2 client test and all **15 unit tests** also passed.
+
+Requires Minecraft **26.2**, **Java 25**, Fabric Loader **0.19.5 or newer**, and
+Fabric API **0.160.0+26.2 or newer for 26.2**. Download
+[`song-player-3.3.5+26.2.1.jar`](https://github.com/AidenRTRRgfdm/SongPlayer/releases/download/v3.3.5-mc26.2.1/song-player-3.3.5%2B26.2.1.jar)
 into the instance's `mods` folder and replace any older SongPlayer JAR.
 
 Put MIDI or NBS files in the instance's `songs` folder. Use `$play filename.mid`

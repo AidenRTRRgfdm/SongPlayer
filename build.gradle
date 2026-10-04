@@ -43,6 +43,17 @@ dependencies {
 }
 tasks.withType(Test).configureEach { useJUnitPlatform() }
 
+// Optional, isolated 26.2 -> 26.3 regression run through ViaFabricPlus.
+tasks.named('runClientGameTest', JavaExec) {
+    if (providers.gradleProperty('songplayerViaTestServer').isPresent()) {
+        systemProperty 'songplayer.viaTestServer', providers.gradleProperty('songplayerViaTestServer').get()
+        if (!providers.gradleProperty('viaFabricPlusJar').isPresent()) {
+            throw new GradleException('The Via regression run requires -PviaFabricPlusJar=/path/to/ViaFabricPlus-5.0.2.jar')
+        }
+        systemProperty 'fabric.addMods', file(providers.gradleProperty('viaFabricPlusJar').get()).absolutePath
+    }
+}
+
 processResources {
 	inputs.property "version", project.version
 
