@@ -11,6 +11,7 @@
     "ClientPlayerInteractionManagerAccessor",
     "ClientPlayNetworkHandlerAccessor",
     "ClientPlayNetworkHandlerMixin",
+    "ConnectionMixin",
     "InGameHudMixin",
     "MinecraftClientMixin",
     "PlayerEntityMixin"
