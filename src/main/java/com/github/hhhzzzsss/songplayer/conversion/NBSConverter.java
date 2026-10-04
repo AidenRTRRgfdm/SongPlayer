@@ -91,9 +91,9 @@ public class NBSConverter {
         }
 
         ArrayList<NBSNote> nbsNotes = new ArrayList<>();
-        short tick = -1;
+        int tick = -1;
         while (true) {
-            int tickJumps = buffer.getShort();
+            int tickJumps = Short.toUnsignedInt(buffer.getShort());
             if (tickJumps == 0) break;
             tick += tickJumps;
 
@@ -179,7 +179,7 @@ public class NBSConverter {
         return new String(arr);
     }
 
-    private static int getMilliTime(int tick, int tempo) {
-        return 1000 * tick * 100 / tempo;
+    private static long getMilliTime(int tick, int tempo) {
+        return 100000L * tick / tempo;
     }
 }
