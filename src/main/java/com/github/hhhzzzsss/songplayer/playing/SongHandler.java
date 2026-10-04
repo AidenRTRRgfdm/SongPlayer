@@ -13,7 +13,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -867,11 +866,8 @@ public class SongHandler {
                 fakePlayer.setYRot(yaw);
                 fakePlayer.setYHeadRot(yaw);
             }
-            // Send on ClientConnection instead of networkHandler because mixin overrides sendPacket on networkHandler
-            SongPlayer.MC.player.connection.getConnection().send(new ServerboundMovePlayerPacket.PosRot(
-                    lastStage.position.getX() + 0.5, lastStage.position.getY(), lastStage.position.getZ() + 0.5,
-                    yaw, pitch,
-                    true, false));
+            StageMovementPackets.sendStageMovement(SongPlayer.MC.player.connection.getConnection(),
+                    lastStage.position, yaw, pitch);
         }
     }
     private void doSwingIfNeeded() {

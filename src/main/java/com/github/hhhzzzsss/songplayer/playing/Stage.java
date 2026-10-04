@@ -9,7 +9,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
-import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -51,11 +50,8 @@ public class Stage {
 	}
 
 	public void sendMovementPacketToStagePosition() {
-		// Doesn't really matter what packet I send here anymore since it gets overridden in the mixin
-		SongPlayer.MC.getConnection().send(new ServerboundMovePlayerPacket.PosRot(
-				position.getX() + 0.5, position.getY(), position.getZ() + 0.5,
-				SongPlayer.MC.player.getYRot(), SongPlayer.MC.player.getXRot(),
-				true, false));
+		StageMovementPackets.sendStageMovement(MC.getConnection().getConnection(), position,
+				MC.player.getYRot(), MC.player.getXRot());
 	}
 
 	public void checkBuildStatus(Song song) {
