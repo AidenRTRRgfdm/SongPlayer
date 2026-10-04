@@ -5,6 +5,7 @@ import com.github.hhhzzzsss.songplayer.SongPlayer;
 import com.github.hhhzzzsss.songplayer.Util;
 import com.github.hhhzzzsss.songplayer.playing.SongHandler;
 import com.github.hhhzzzsss.songplayer.playing.Stage;
+import com.github.hhhzzzsss.songplayer.playing.StageMovementPackets;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
@@ -41,6 +42,9 @@ public class ClientPlayNetworkHandlerMixin {
 
 	@Inject(at = @At("TAIL"), method = "handleMovePlayer(Lnet/minecraft/network/protocol/game/ClientboundPlayerPositionPacket;)V")
 	public void onOnPlayerPositionLook(ClientboundPlayerPositionPacket packet, CallbackInfo ci) {
+		// The acknowledgement and its vanilla position packet have already been sent.
+		// Clear the guard before our stage recovery can emit a custom update.
+		StageMovementPackets.endServerPositionCorrection(((ClientPacketListener) (Object) this).getConnection());
 		Stage lastStage = SongHandler.getInstance().lastStage;
 		LocalPlayer player = SongPlayer.MC.player;
 		if (!SongHandler.getInstance().isIdle() && lastStage != null) {
@@ -82,6 +86,14 @@ public class ClientPlayNetworkHandlerMixin {
 				lastStage.movePlayerToStagePosition();
 			}
 		}
+	}
+
+	@Inject(method = "handleMovePlayer(Lnet/minecraft/network/protocol/game/ClientboundPlayerPositionPacket;)V",
+			at = @At(value = "INVOKE", target = "Lnet/minecraft/network/protocol/PacketUtils;ensureRunningOnSameThread(Lnet/minecraft/network/protocol/Packet;Lnet/minecraft/network/PacketListener;Lnet/minecraft/network/PacketProcessor;)V", shift = At.Shift.AFTER))
+	private void onBeginServerPositionCorrection(ClientboundPlayerPositionPacket packet, CallbackInfo ci) {
+		// Begin only after thread scheduling; a HEAD injection would remain set when
+		// the networking-thread invocation exits by throwing its scheduling exception.
+		StageMovementPackets.beginServerPositionCorrection(((ClientPacketListener) (Object) this).getConnection());
 	}
 
 	@Inject(at = @At("TAIL"), method = "handlePlayerAbilities(Lnet/minecraft/network/protocol/game/ClientboundPlayerAbilitiesPacket;)V")

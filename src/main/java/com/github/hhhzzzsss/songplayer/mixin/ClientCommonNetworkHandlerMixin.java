@@ -4,6 +4,7 @@ import com.github.hhhzzzsss.songplayer.Config;
 import com.github.hhhzzzsss.songplayer.SongPlayer;
 import com.github.hhhzzzsss.songplayer.playing.SongHandler;
 import com.github.hhhzzzsss.songplayer.playing.Stage;
+import com.github.hhhzzzsss.songplayer.playing.StageMovementPackets;
 import net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.Packet;
@@ -34,12 +35,11 @@ public class ClientCommonNetworkHandlerMixin {
         Stage lastStage = songHandler.lastStage;
 
         if (!songHandler.isIdle() && packet instanceof ServerboundMovePlayerPacket) {
+            if (StageMovementPackets.isHandlingServerPositionCorrection(connection)) return;
             if (lastStage != null) {
                 if (!Config.getConfig().rotate) { // Only copy player rotation if rotate is not enabled
-                    connection.send(new ServerboundMovePlayerPacket.PosRot(
-                            lastStage.position.getX() + 0.5, lastStage.position.getY(), lastStage.position.getZ() + 0.5,
-                            SongPlayer.MC.player.getYRot(), SongPlayer.MC.player.getXRot(),
-                            true, false));
+                    StageMovementPackets.sendStageMovement(connection, lastStage.position,
+                            SongPlayer.MC.player.getYRot(), SongPlayer.MC.player.getXRot());
                     if (songHandler.fakePlayer != null) {
                         songHandler.fakePlayer.copyStagePosAndPlayerLook();
                     }
