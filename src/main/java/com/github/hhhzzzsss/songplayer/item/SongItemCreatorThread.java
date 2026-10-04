@@ -4,15 +4,14 @@ import com.github.hhhzzzsss.songplayer.SongPlayer;
 import com.github.hhhzzzsss.songplayer.Util;
 import com.github.hhhzzzsss.songplayer.conversion.SPConverter;
 import com.github.hhhzzzsss.songplayer.song.SongLoaderThread;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.CustomModelDataComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-
 import java.io.IOException;
 import java.util.List;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomModelData;
 
 public class SongItemCreatorThread extends SongLoaderThread {
     public final int slotId;
@@ -20,7 +19,7 @@ public class SongItemCreatorThread extends SongLoaderThread {
     public SongItemCreatorThread(String location) throws IOException {
         super(location);
         this.slotId = SongPlayer.MC.player.getInventory().getSelectedSlot();
-        this.stack = SongPlayer.MC.player.getInventory().getStack(slotId);
+        this.stack = SongPlayer.MC.player.getInventory().getItem(slotId);
     }
 
     @Override
@@ -34,25 +33,25 @@ public class SongItemCreatorThread extends SongLoaderThread {
             return;
         }
         SongPlayer.MC.execute(() -> {
-            if (SongPlayer.MC.world == null) {
+            if (SongPlayer.MC.level == null) {
                 return;
             }
-            if (!SongPlayer.MC.player.getInventory().getStack(slotId).equals(stack)) {
+            if (!SongPlayer.MC.player.getInventory().getItem(slotId).equals(stack)) {
                 Util.showChatMessage("§cCould not create song item because item has moved");
             }
             ItemStack newStack;
             if (stack.isEmpty()) {
-                newStack = Items.PAPER.getDefaultStack();
+                newStack = Items.PAPER.getDefaultInstance();
                 // When going from 1.21.3 -> 1.21.4, datafixer changes the custom model data to a float array with one element
-                newStack.set(DataComponentTypes.CUSTOM_MODEL_DATA, new CustomModelDataComponent(List.of(751642938f), List.of(), List.of(), List.of()));
+                newStack.set(DataComponents.CUSTOM_MODEL_DATA, new CustomModelData(List.of(751642938f), List.of(), List.of(), List.of()));
             }
             else {
                 newStack = stack.copy();
             }
             newStack = SongItemUtils.createSongItem(newStack, songData, filename, song.name);
-            SongPlayer.MC.player.getInventory().setStack(slotId, newStack);
-            SongPlayer.MC.interactionManager.clickCreativeStack(SongPlayer.MC.player.getStackInHand(Hand.MAIN_HAND), 36 + slotId);
-            Util.showChatMessage(Text.literal("§6Successfully assigned song data to §3").append(newStack.getItem().getName()));
+            SongPlayer.MC.player.getInventory().setItem(slotId, newStack);
+            SongPlayer.MC.gameMode.handleCreativeModeItemAdd(SongPlayer.MC.player.getItemInHand(InteractionHand.MAIN_HAND), 36 + slotId);
+            Util.showChatMessage(Component.literal("§6Successfully assigned song data to §3").append(newStack.getItem().getName(newStack)));
         });
     }
 }

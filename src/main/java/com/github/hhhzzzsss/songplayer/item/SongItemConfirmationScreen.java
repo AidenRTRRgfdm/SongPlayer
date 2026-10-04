@@ -2,29 +2,27 @@ package com.github.hhhzzzsss.songplayer.item;
 
 import com.github.hhhzzzsss.songplayer.Util;
 import com.github.hhhzzzsss.songplayer.playing.SongHandler;
-import net.minecraft.client.font.MultilineText;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-
 import java.io.IOException;
 import java.util.Arrays;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.TextAlignment;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.MultiLineLabel;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 
 public class SongItemConfirmationScreen extends Screen {
-    private ItemStack stack;
-    private SongItemLoaderThread loaderThread;
-    private MultilineText unloadedText;
-    private MultilineText loadedText;
+    private final SongItemLoaderThread loaderThread;
+    private MultiLineLabel unloadedText;
+    private MultiLineLabel loadedText;
     private boolean loaded = false;
 
-    private static final Text CONFIRM = Text.literal("Play");
-    private static final Text CANCEL = Text.literal("Cancel");
+    private static final Component CONFIRM = Component.literal("Play");
+    private static final Component CANCEL = Component.literal("Cancel");
 
     public SongItemConfirmationScreen(ItemStack stack) throws IOException, IllegalArgumentException {
-        super(Text.literal("Use song item"));
-        this.stack = stack;
+        super(Component.literal("Use song item"));
         this.loaderThread = new SongItemLoaderThread(stack);
         this.loaderThread.start();
     }
@@ -33,32 +31,30 @@ public class SongItemConfirmationScreen extends Screen {
     protected void init() {
         super.init();
         String unloadedMessage = "§7Loading song...";
-        this.unloadedText = MultilineText.create(this.textRenderer, Text.literal(unloadedMessage));
+        this.unloadedText = MultiLineLabel.create(this.font, Component.literal(unloadedMessage));
+        if (loaded) addButtons(60 + loadedText.getLineCount() * this.font.lineHeight + 12);
     }
 
     private void addButtons(int y) {
         int centerX = this.width / 2;
 
-        this.addDrawableChild(ButtonWidget.builder(CONFIRM, button -> {
+        this.addRenderableWidget(Button.builder(CONFIRM, button -> {
             SongHandler.getInstance().loadSong(loaderThread);
-            this.client.setScreen(null);
-        }).dimensions(centerX - 105, y, 100, 20).build());
+            this.minecraft.gui.setScreen(null);
+        }).bounds(centerX - 105, y, 100, 20).build());
 
-        this.addDrawableChild(ButtonWidget.builder(CANCEL, button -> {
-            this.client.setScreen(null);
-        }).dimensions(centerX + 5, y, 100, 20).build());
+        this.addRenderableWidget(Button.builder(CANCEL, button -> {
+            this.minecraft.gui.setScreen(null);
+        }).bounds(centerX + 5, y, 100, 20).build());
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
-
-        context.drawCenteredTextWithShadow(textRenderer, this.title, this.width / 2, 40, 0xFFFFFF);
-
+    public void tick() {
+        super.tick();
         if (!loaderThread.isAlive()) {
             if (loaderThread.exception != null) {
                 Util.showChatMessage("§cError loading song item: §4" + loaderThread.exception.getMessage());
-                this.client.setScreen(null);
+                this.minecraft.gui.setScreen(null);
                 return;
             }
             else if (loadedText == null) {
@@ -67,21 +63,27 @@ public class SongItemConfirmationScreen extends Screen {
                         String.format("§7Max notes per second: %s%d", getNumberColor(loaderThread.maxNotesPerSecond), loaderThread.maxNotesPerSecond),
                         String.format("§7Avg notes per second: %s%.2f", getNumberColor(loaderThread.avgNotesPerSecond), loaderThread.avgNotesPerSecond),
                 };
-                Text[] messageList = Arrays.stream(loadedMessages).map(Text::literal).toArray(Text[]::new);
-                this.loadedText = MultilineText.create(this.textRenderer, messageList);
+                Component[] messageList = Arrays.stream(loadedMessages).map(Component::literal).toArray(Component[]::new);
+                this.loadedText = MultiLineLabel.create(this.font, messageList);
 
-                int loadedTextHeight = this.loadedText.getLineCount() * this.textRenderer.fontHeight;
+                int loadedTextHeight = this.loadedText.getLineCount() * this.font.lineHeight;
                 addButtons(60 + loadedTextHeight + 12);
 
                 loaded = true;
             }
         }
+    }
+
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
+        context.centeredText(font, this.title, this.width / 2, 40, 0xFFFFFFFF);
 
         if (loaded) {
-            loadedText.draw(context, MultilineText.Alignment.CENTER, this.width / 2, 60, 9, true, -1);
+            loadedText.visitLines(TextAlignment.CENTER, this.width / 2, 60, 9, context.textRenderer());
         }
         else {
-            unloadedText.draw(context, MultilineText.Alignment.CENTER, this.width / 2, 60, 9, true, -1);
+            unloadedText.visitLines(TextAlignment.CENTER, this.width / 2, 60, 9, context.textRenderer());
         }
     }
 

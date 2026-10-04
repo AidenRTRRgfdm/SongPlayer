@@ -3,10 +3,9 @@ package com.github.hhhzzzsss.songplayer.item;
 import com.github.hhhzzzsss.songplayer.conversion.SPConverter;
 import com.github.hhhzzzsss.songplayer.song.Note;
 import com.github.hhhzzzsss.songplayer.song.SongLoaderThread;
-import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NbtCompound;
-
 import java.io.IOException;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 
 public class SongItemLoaderThread extends SongLoaderThread {
     public byte[] songData;
@@ -19,7 +18,7 @@ public class SongItemLoaderThread extends SongLoaderThread {
         if (songData == null) {
             throw new IOException("Song data is missing");
         }
-        NbtCompound songItemNbt = SongItemUtils.getSongItemTag(stack)
+        CompoundTag songItemNbt = SongItemUtils.getSongItemTag(stack)
                 .orElseThrow(() -> new IOException("Song item tag is missing"));
         displayName = songItemNbt.getString(SongItemUtils.DISPLAY_NAME_KEY).orElse(null);
         filename = displayName;
