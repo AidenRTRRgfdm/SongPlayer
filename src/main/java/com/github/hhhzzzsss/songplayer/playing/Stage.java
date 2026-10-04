@@ -5,18 +5,16 @@ import com.github.hhhzzzsss.songplayer.SongPlayer;
 import com.github.hhhzzzsss.songplayer.Util;
 import com.github.hhhzzzsss.songplayer.song.Instrument;
 import com.github.hhhzzzsss.songplayer.song.Song;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.*;
 import java.util.stream.Collectors;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 public class Stage {
-	private final MinecraftClient MC = SongPlayer.MC;
+	private final Minecraft MC = SongPlayer.MC;
 
 	public enum StageType {
 		DEFAULT,
@@ -38,7 +36,7 @@ public class Stage {
 	public LinkedList<BlockPos> requiredClicks = new LinkedList<>();
 
 	public Stage() {
-		position = MC.player.getBlockPos();
+		position = MC.player.blockPosition();
 
 		// Information tracked for checking cleanup conditions
 		worldName = Util.getWorldName();
@@ -47,16 +45,16 @@ public class Stage {
 	}
 
 	public void movePlayerToStagePosition() {
-		MC.player.refreshPositionAndAngles(position.getX() + 0.5, position.getY() + 0.0, position.getZ() + 0.5, MC.player.getYaw(), MC.player.getPitch());
-		MC.player.setVelocity(Vec3d.ZERO);
+		MC.player.snapTo(position.getX() + 0.5, position.getY() + 0.0, position.getZ() + 0.5, MC.player.getYRot(), MC.player.getXRot());
+		MC.player.setDeltaMovement(Vec3.ZERO);
 		sendMovementPacketToStagePosition();
 	}
 
 	public void sendMovementPacketToStagePosition() {
 		// Doesn't really matter what packet I send here anymore since it gets overridden in the mixin
-		SongPlayer.MC.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.Full(
+		SongPlayer.MC.getConnection().send(new ServerboundMovePlayerPacket.PosRot(
 				position.getX() + 0.5, position.getY(), position.getZ() + 0.5,
-				SongPlayer.MC.player.getYaw(), SongPlayer.MC.player.getPitch(),
+				SongPlayer.MC.player.getYRot(), SongPlayer.MC.player.getXRot(),
 				true, false));
 	}
 
@@ -118,10 +116,9 @@ public class Stage {
 		// Remove already-existing notes from missingNotes, adding their positions to noteblockPositions, and create a list of unused noteblock locations
 		ArrayList<BlockPos> unusedNoteblockLocations = new ArrayList<>();
 		for (BlockPos nbPos : noteblockLocations) {
-			BlockState bs = SongPlayer.MC.world.getBlockState(nbPos);
-			int blockId = Block.getRawIdFromState(bs);
-			if (blockId >= SongPlayer.NOTEBLOCK_BASE_ID && blockId < SongPlayer.NOTEBLOCK_BASE_ID+800) {
-				int noteId = (blockId-SongPlayer.NOTEBLOCK_BASE_ID)/2;
+			BlockState bs = SongPlayer.MC.level.getBlockState(nbPos);
+			int noteId = NoteBlockNotes.getNoteId(bs);
+			if (noteId >= 0) {
 				if (missingNotes.contains(noteId)) {
 					missingNotes.remove(noteId);
 					noteblockPositions.put(noteId, nbPos);
@@ -150,14 +147,14 @@ public class Stage {
 		}
 
 		for (BlockPos bp : noteblockPositions.values()) { // Optional break locations
-			breakLocations.add(bp.up());
+			breakLocations.add(bp.above());
 		}
 
 		requiredBreaks = breakLocations
 				.stream()
 				.filter((bp) -> {
-					BlockState bs = SongPlayer.MC.world.getBlockState(bp);
-					return !bs.isAir() && !bs.isLiquid();
+					BlockState bs = SongPlayer.MC.level.getBlockState(bp);
+					return !bs.isAir() && !bs.liquid();
 				})
 				.sorted((a, b) -> {
 					// First sort by y
@@ -515,12 +512,11 @@ public class Stage {
 		for (int dx = -5; dx <= 5; dx++) {
 			for (int dz = -5; dz <= 5; dz++) {
 				for (int dy : new int[]{-1, 0, 1, 2, -2, 3, -3, 4, -4, 5, 6}) {
-					BlockPos bp = position.add(dx, dy, dz);
-					BlockState bs = SongPlayer.MC.world.getBlockState(bp);
-					BlockState aboveBs = SongPlayer.MC.world.getBlockState(bp.up());
-					int blockId = Block.getRawIdFromState(bs);
-					if (blockId >= SongPlayer.NOTEBLOCK_BASE_ID && blockId < SongPlayer.NOTEBLOCK_BASE_ID + 800 && aboveBs.isAir()) {
-						int noteId = (blockId - SongPlayer.NOTEBLOCK_BASE_ID) / 2;
+					BlockPos bp = position.offset(dx, dy, dz);
+					BlockState bs = SongPlayer.MC.level.getBlockState(bp);
+					BlockState aboveBs = SongPlayer.MC.level.getBlockState(bp.above());
+					int noteId = NoteBlockNotes.getNoteId(bs);
+					if (noteId >= 0 && aboveBs.isAir()) {
 						int instrument = noteId / 25;
 						int pitch = noteId % 25;
 						instrumentMap[instrument].put(bp, pitch);
@@ -549,9 +545,8 @@ public class Stage {
 
 	public boolean hasBreakingModification() {
 		for (Map.Entry<Integer, BlockPos> entry : noteblockPositions.entrySet()) {
-			BlockState bs = SongPlayer.MC.world.getBlockState(entry.getValue());
-			int blockId = Block.getRawIdFromState(bs);
-			int actualNoteId = (blockId-SongPlayer.NOTEBLOCK_BASE_ID)/2;
+			BlockState bs = SongPlayer.MC.level.getBlockState(entry.getValue());
+			int actualNoteId = NoteBlockNotes.getNoteId(bs);
 			if (actualNoteId < 0 || actualNoteId >= 400) {
 				return true;
 			}
@@ -566,15 +561,15 @@ public class Stage {
 				return true;
 			}
 
-			BlockState aboveBs = SongPlayer.MC.world.getBlockState(entry.getValue().up());
-			if (!aboveBs.isAir() && !aboveBs.isLiquid()) {
+			BlockState aboveBs = SongPlayer.MC.level.getBlockState(entry.getValue().above());
+			if (!aboveBs.isAir() && !aboveBs.liquid()) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	public Vec3d getOriginBottomCenter() {
-		return Vec3d.ofBottomCenter(position);
+	public Vec3 getOriginBottomCenter() {
+		return Vec3.atBottomCenterOf(position);
 	}
 }
