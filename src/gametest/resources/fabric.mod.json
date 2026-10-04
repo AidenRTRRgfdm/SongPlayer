@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "name": "SongPlayer 26.2 Client Regression Tests",
   "environment": "client",
-  "entrypoints": {"fabric-client-gametest": ["com.github.hhhzzzsss.songplayer.test.SongPlayerGameTest"]},
+  "entrypoints": {"fabric-client-gametest": ["com.github.hhhzzzsss.songplayer.test.SongPlayerGameTest", "com.github.hhhzzzsss.songplayer.test.SongPlayerViaGameTest"]},
   "mixins": ["songplayer-gametest.mixins.json"],
   "depends": {
     "fabricloader": ">=0.19.3",
