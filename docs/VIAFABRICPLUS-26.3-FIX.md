@@ -1,8 +1,8 @@
 # Movement fix for 26.3 servers through ViaFabricPlus
 
-SongPlayer `3.3.5+26.2.1` changes how it sends stage movement while building, playing, and cleaning up. It targets a Minecraft **26.2 client** connecting to a **26.3 server** through **ViaFabricPlus 5.0.2**. The reported disconnect happened as note-block construction began, with the translation key `multiplayer.disconnect.invalid_player_movement`.
+SongPlayer `3.3.5+26.2.2` handles stage movement and the return to normal movement after stopping. It targets a Minecraft **26.2 client** connecting to a **26.3 server** through **ViaFabricPlus 5.0.2**. The initial report disconnected as note-block construction began, with the translation key `multiplayer.disconnect.invalid_player_movement`. A later report exposed a separate handoff after `$stop` with automatic cleanup disabled.
 
-The behavior below is supported by the published server bytecode and SongPlayer's packet paths, and was reproduced against a disposable native 26.3 loopback server. The final Loader 0.19.5 build, all 15 unit tests, the native 26.2 client test, and the ViaFabricPlus network test passed.
+The server restriction is supported by the published bytecode and was reproduced against a disposable native 26.3 loopback server. The previous `3.3.5+26.2.1` passed its original fixture but failed the added direct-stop regression. The patched `3.3.5+26.2.2` build, all 21 unit tests, native 26.2 client rerun, and expanded ViaFabricPlus fixture passed.
 
 ## What changed in the server
 
@@ -31,6 +31,18 @@ That behavior was accepted by the native 26.2 server used for the original port'
 [Stage](../src/main/java/com/github/hhhzzzsss/songplayer/playing/Stage.java), [SongHandler](../src/main/java/com/github/hhhzzzsss/songplayer/playing/SongHandler.java), and [ClientCommonNetworkHandlerMixin](../src/main/java/com/github/hhhzzzsss/songplayer/mixin/ClientCommonNetworkHandlerMixin.java) all use that helper. SongPlayer continues to hold the server position at the stage while allowing its local camera behavior and block rotations.
 
 The finite-angle fallback is an additional safeguard. It is not evidence that NaN or infinity caused the reported construction disconnect.
+
+## Stopping without cleanup: the additional 26.2.2 fix
+
+The first fix governed custom stage packets while SongPlayer was active. With `autoCleanup=false`, a real `$stop` command can reset the handler to idle in the same client tick after a stage position was sent. The normal player can then send a vanilla `Pos` or `PosRot` through the now-idle movement path. That is another position before `ClientTickEnd`, so it violates the same 26.3 restriction. Interrupting cleanup with a second `$stop` has the same handoff.
+
+The connection-level filter in `3.3.5+26.2.2` applies only when SongPlayer is idle and a custom stage position was actually emitted earlier in the current client tick. It removes the repeated position component, retaining rotation when present and preserving the packet's ground and horizontal-collision flags. A `PosRot` becomes `Rot`; a position-only packet becomes `StatusOnly`.
+
+This narrow handoff ends at the next actual client tick-end packet. A new connection clears its state, and the server-position-correction guard still allows the vanilla teleport acknowledgement follow-up. Ordinary idle movement without an earlier stage position is unaffected.
+
+The earlier protocol fixture stopped during construction with cleanup enabled and then waited for restoration. It did not force normal player movement in the same tick after a direct playback stop. The expanded fixture now plays real notes, emits a stage position, invokes the actual `$stop` command, and sends vanilla movement in one client runnable, so no tick-end can intervene. It covers cleanup disabled with rotation off and on, and interruption of cleanup with a second stop, then checks manual restoration of the retained stage.
+
+The old `3.3.5+26.2.1` implementation was compiled and run with the added regression against the same disposable native 26.3 server. Playback reached the stage successfully; after the real stop with cleanup disabled, the client disconnected with `Invalid move player packet received`, and the fixture failed its same-tick movement assertion. The server log recorded the same rejection. The patched `3.3.5+26.2.2` passed that handoff and the other stop variants in the expanded fixture.
 
 ## Preserve teleport acknowledgements
 
@@ -61,11 +73,11 @@ export PATH="$JAVA_HOME/bin:$PATH"
 ./gradlew runClientGameTest
 ```
 
-The runtime artifact is `build/libs/song-player-3.3.5+26.2.1.jar`. The build's 15 unit tests include five movement tests covering repeated stage updates, an earlier vanilla position, rotation-only packets, reconnects, and the teleport guard with finite-angle fallback. Results are in `build/reports/tests/test/index.html`.
+The runtime artifact is `build/libs/song-player-3.3.5+26.2.2.jar`. The build passed all **21 unit tests**, with zero failures, errors, or skips. Results are in `build/reports/tests/test/index.html`. Eleven movement tests cover the original position limit and the additional stop handoff: preserving look and flags, arming only after an emitted stage position, restoring ordinary movement at tick end or reconnect, and allowing active-song and teleport-correction packets through.
 
 The default client game test uses a disposable native 26.2 integrated world and checks construction, playback, rebuilding, cleanup, inventory restoration, and survival tuning. Its successful completion marker is `SONGPLAYER_26_2_GAMETEST_PASS`.
 
-The final Loader 0.19.5 native run completed successfully in 26 seconds. It checked all 800 semantic note states, local commands and native autocomplete, song and item persistence, confirmation actions, creative construction, real note events, the fake player, rebuilding, block and inventory cleanup, survival tuning, and disconnect reset.
+The final `3.3.5+26.2.2` Loader 0.19.5 native run completed successfully in **34 seconds**. It checked all 800 semantic note states, local commands and native autocomplete, song and item persistence, confirmation actions, creative construction, real note events, the fake player, rebuilding, block and inventory cleanup, survival tuning, and disconnect reset. It printed `SONGPLAYER_26_2_GAMETEST_PASS`.
 
 ## Opt-in 26.2 → 26.3 network verification
 
@@ -83,20 +95,20 @@ With that server running, execute:
 
 This opt-in command selects [SongPlayerViaGameTest](../src/gametest/java/com/github/hhhzzzsss/songplayer/test/SongPlayerViaGameTest.java), loads the specified ViaFabricPlus JAR, and selects its 26.3 target. It accepts only an explicit loopback endpoint. Without the properties, the ordinary native 26.2 test runs.
 
-The network fixture first sends two position packets in one client tick while SongPlayer is idle and requires the exact native invalid-movement disconnect. After reconnecting, it checks that one position followed by multiple rotation-only packets stays connected. It then exercises stage construction and real server note events with rotation disabled and enabled, a server teleport during construction, fake-player attachment, automatic cleanup, original block and hotbar restoration, and stopping during construction.
+The network fixture first sends two position packets in one client tick while SongPlayer is idle and requires the exact native invalid-movement disconnect. After reconnecting, it checks that one position followed by multiple rotation-only packets stays connected. The expanded fixture then forces the stop handoffs described above, followed by stage construction and real server note events with rotation disabled and enabled, a server teleport during construction, fake-player attachment, automatic cleanup, original block and hotbar restoration, and stopping during construction.
 
 The expected final marker is `SONGPLAYER_VIA_26_3_GAMETEST_PASS`. A marker is a verification result only when the run actually completes successfully. Check the client output and the disposable server log together; the deliberately rejected baseline connection is expected.
 
-## Verified cross-version result
+## Previously verified 26.2.1 cross-version result
 
-On October 4, 2026, the fixture completed successfully in 37 seconds with Minecraft 26.2, Fabric Loader 0.19.5, MixinExtras 0.5.5, and ViaFabricPlus 5.0.2 targeting protocol `26.3 (777)` on the disposable native server. It verified:
+On October 4, 2026, the `3.3.5+26.2.1` fixture completed successfully in 37 seconds with Minecraft 26.2, Fabric Loader 0.19.5, MixinExtras 0.5.5, and ViaFabricPlus 5.0.2 targeting protocol `26.3 (777)` on the disposable native server. It verified:
 
 - Two ordinary position packets before the next tick end produce `Invalid move player packet received` with the expected translation key.
 - One position followed by multiple rotation-only packets stays connected.
 - Rotation disabled and enabled both complete construction and receive real server note events for every fixture note.
 - Server teleports during construction retain the vanilla acknowledgement path.
 - The fake player remains attached; automatic cleanup restores the original blocks, hotbar, and game mode.
-- Stopping during construction also completes cleanup.
+- Stopping during construction with automatic cleanup enabled also completes cleanup.
 
 The completed run printed:
 
@@ -107,4 +119,25 @@ SONGPLAYER_VIA_STOP_DURING_BUILD_PASS
 SONGPLAYER_VIA_26_3_GAMETEST_PASS: Minecraft 26.2 + ViaFabricPlus target26.3; native strict duplicate-position disconnect reproduced; one position plus rotation-only control; rotate=false/true construction and real server note playback; fake player; vanilla teleport ACKs during building; automatic cleanup and original block/hotbar restoration; stop during building
 ```
 
-**Final verification status:** the Loader 0.19.5 build passed; all 15 unit tests passed with zero failures, errors, or skips; the native 26.2 client test passed; and the ViaFabricPlus test against the disposable native 26.3 loopback server passed.
+These are historical results for `3.3.5+26.2.1`; they do not verify the additional direct stop handoff.
+
+## Verified 26.2.2 stop-handoff result
+
+The patched `3.3.5+26.2.2` expanded run completed successfully in **1 minute 13 seconds**, against the same disposable native 26.3 server with Minecraft 26.2, Loader 0.19.5, and ViaFabricPlus 5.0.2. The three new handoff cases all stayed connected:
+
+- Automatic cleanup disabled, rotation disabled.
+- Automatic cleanup disabled, rotation enabled.
+- Automatic cleanup enabled, followed by a second `$stop` that interrupts cleanup.
+
+Each case played actual server notes, invoked the real command, and sent vanilla movement before the next tick-end packet. It verified idle state, fake-player removal, preserved hotbar contents, and manual cleanup of the retained stage. The same run also passed the strict duplicate-position baseline, rotation-only control, both rotation settings for full construction and playback, server teleport acknowledgements, automatic restoration, and stopping during construction.
+
+The completed run printed:
+
+```text
+SONGPLAYER_VIA_STOP_HANDOFF_PASS: autoCleanup=false rotate=false
+SONGPLAYER_VIA_STOP_HANDOFF_PASS: autoCleanup=false rotate=true
+SONGPLAYER_VIA_STOP_HANDOFF_PASS: autoCleanup=true rotate=true
+SONGPLAYER_VIA_26_3_GAMETEST_PASS: Minecraft 26.2 + ViaFabricPlus target26.3; native strict duplicate-position disconnect reproduced; one position plus rotation-only control; rotate=false/true construction and real server note playback; fake player; vanilla teleport ACKs during building; automatic cleanup and original block/hotbar restoration; stop during building; same-client-tick vanilla movement after stopping playback and aborting cleanup
+```
+
+**Final 26.2.2 verification status:** the old-code stop regression reproduced the exact invalid-movement disconnect. The patched build and all 21 unit tests passed with zero failures, errors, or skips; the native 26.2 client rerun passed in 34 seconds; and the expanded ViaFabricPlus protocol run passed in 1 minute 13 seconds against the disposable native 26.3 server. The external server from the original report has not been retested.

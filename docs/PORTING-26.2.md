@@ -2,7 +2,7 @@
 
 This fork ports SongPlayer 3.3.5 from Minecraft 1.21.9 to 26.2, retaining its song formats, local commands, stage construction, playback, song items, survival tuning, and cleanup. The starting point was upstream commit [`36f9d1f3dda4cd7b5728e6e4fb54e0a95ff9c9d8`](https://github.com/hhhzzzsss/SongPlayer/commit/36f9d1f3dda4cd7b5728e6e4fb54e0a95ff9c9d8), titled “Fix fakeplayer crash.”
 
-The current version is `3.3.5+26.2.1`. Its additional movement changes for ViaFabricPlus connections to 26.3 servers are explained in [the cross-version fix notes](VIAFABRICPLUS-26.3-FIX.md).
+The current version is `3.3.5+26.2.2`. Its movement changes for ViaFabricPlus connections to 26.3 servers, including the additional `$stop` handoff fix, are explained in [the cross-version fix notes](VIAFABRICPLUS-26.3-FIX.md).
 
 ## 1. Convert names while the old Minecraft version still matches
 
@@ -44,7 +44,7 @@ The final settings are in [gradle.properties](../gradle.properties), [build.grad
 | Fabric Loader | `0.18.4` | `0.19.5` |
 | Fabric API | `0.134.1+1.21.9` | `0.160.0+26.2` |
 | Dependency configuration | `modImplementation` | `implementation` |
-| Mod version | `3.3.5` | `3.3.5+26.2.1` |
+| Mod version | `3.3.5` | `3.3.5+26.2.2` |
 
 The unobfuscated Loom plugin produces the runtime JAR directly. [Fabric's 26.1 build migration instructions](https://docs.fabricmc.net/26.1.2/develop/porting/) explain the plugin change, removal of mappings, ordinary dependency configurations, and Java 25 requirement; [the 26.2 porting guide](https://docs.fabricmc.net/develop/porting/) covers updating the target dependencies.
 
@@ -107,6 +107,8 @@ Compilation alone did not catch two runtime failures.
 
 **26.3 movement contract:** the later `3.3.5+26.2.1` update sends at most one stage position per client tick, then rotation-only updates, and preserves vanilla teleport acknowledgements. This addresses the additional position-packet restriction found in the official 26.3 server. See [the source evidence, implementation, and opt-in network test](VIAFABRICPLUS-26.3-FIX.md).
 
+**Stopping without cleanup:** `3.3.5+26.2.2` also handles the remainder of a client tick after SongPlayer returns to idle. With automatic cleanup disabled, `$stop` can end playback after a stage position has already been sent; normal player movement can then send another position before the tick ends. The connection-level handoff filter removes that repeated position while preserving look, ground, and collision information. Its scope ends at the next actual client tick-end packet, and vanilla teleport acknowledgement follow-ups remain unchanged. The previous successful protocol test stopped into cleanup, so it did not cover this direct return to normal movement.
+
 ## 6. Build and reproduce verification
 
 From a checkout of this fork, use a full Java 25 JDK:
@@ -119,15 +121,15 @@ java -version
 ./gradlew runClientGameTest
 ```
 
-`build` runs the fifteen JUnit tests and produces `build/libs/song-player-3.3.5+26.2.1.jar` plus the separate sources JAR. Unit-test results are available in `build/reports/tests/test/index.html` and `build/test-results/test/`.
+`build` runs the JUnit tests and produces `build/libs/song-player-3.3.5+26.2.2.jar` plus the separate sources JAR. Unit-test results are available in `build/reports/tests/test/index.html` and `build/test-results/test/`.
 
-The final Loader `0.19.5` build passed: **15 tests, 0 failures, 0 errors, 0 skipped**:
+The `3.3.5+26.2.2` Loader `0.19.5` build passed: **21 tests, 0 failures, 0 errors, 0 skipped**:
 
 | Test source | Contracts checked |
 | --- | --- |
 | [TxtConverterTest](../src/test/java/com/github/hhhzzzsss/songplayer/conversion/TxtConverterTest.java), 2 tests | Comments and CRLF input; highest supported instrument; malformed input reports the actual source line |
 | [SongTest](../src/test/java/com/github/hhhzzzsss/songplayer/song/SongTest.java), 5 tests | Chord ordering and required notes; seek boundaries; finite loops with elapsed remainder; infinite loops and reset; repeated `play()` preserves the start time |
-| [StageMovementPacketsTest](../src/test/java/com/github/hhhzzzsss/songplayer/playing/StageMovementPacketsTest.java), 5 tests | One position per tick; an earlier vanilla position shares the allowance; rotation-only updates; connection reset; teleport guard and finite-angle fallback |
+| [StageMovementPacketsTest](../src/test/java/com/github/hhhzzzsss/songplayer/playing/StageMovementPacketsTest.java), 11 tests | One position per tick; shared vanilla allowance; reconnects; finite-angle fallback; stop handoff preserves look and flags; only emitted stage positions arm it; tick-end reset; active songs and teleport corrections pass through |
 | [NBSConverterTest](../src/test/java/com/github/hhhzzzsss/songplayer/conversion/NBSConverterTest.java), 3 tests | Long-song timestamps across integer overflow; unsigned tick jumps; cumulative tick counts beyond 65,535 |
 
 [SongPlayerGameTest](../src/gametest/java/com/github/hhhzzzsss/songplayer/test/SongPlayerGameTest.java) launches the real Fabric client and creates a disposable integrated-server world. Its probes observe outgoing chat and received server note packets. The fixture verifies:
@@ -150,6 +152,12 @@ The test configuration accepts the Minecraft EULA for its disposable test run an
 
 For `3.3.5+26.2.1`, the final native 26.2 client rerun with Loader `0.19.5` **passed** in 26 seconds and printed the same marker. It checked all 800 semantic note states and the complete feature fixture listed above, including construction, real note events, rebuilding, cleanup, inventory restoration, and survival tuning.
 
-The separate 26.2 → ViaFabricPlus 5.0.2 → native 26.3 loopback-server test **passed** with Loader `0.19.5`. It reproduced the exact duplicate-position disconnect, verified the rotation-only control, and completed construction, playback, teleport acknowledgement handling, and cleanup with both rotation settings, plus stopping during construction. Its final marker was `SONGPLAYER_VIA_26_3_GAMETEST_PASS`. The [cross-version fix notes](VIAFABRICPLUS-26.3-FIX.md) include the full result and reproduction command.
+For that `3.3.5+26.2.1` release, the separate 26.2 → ViaFabricPlus 5.0.2 → native 26.3 loopback-server test **passed** with Loader `0.19.5`. It reproduced the exact duplicate-position disconnect, verified the rotation-only control, and completed construction, playback, teleport acknowledgement handling, and cleanup with both rotation settings, plus stopping during construction with cleanup enabled. Its final marker was `SONGPLAYER_VIA_26_3_GAMETEST_PASS`.
 
-This validation uses an integrated server. A particular multiplayer server's permissions, custom gamemode commands, packet restrictions, and interaction rules still determine which SongPlayer features can run there.
+The added stop regression **reproduced the exact invalid-movement disconnect** with the old `3.3.5+26.2.1` implementation against the disposable native 26.3 server. The patched `3.3.5+26.2.2` build and all **21 unit tests passed with zero failures, errors, or skips**. The final native 26.2 client run **passed** in 34 seconds, repeating all 800 semantic note states and the complete feature fixture listed above.
+
+The expanded protocol run **passed** in 1 minute 13 seconds. It invokes the actual `$stop` command and sends normal player movement in the same client runnable, testing cleanup disabled with rotation off and on, and cleanup interrupted by a second stop. It also repeats all previous construction, playback, teleport acknowledgement, fake-player, and restoration checks. The [cross-version fix notes](VIAFABRICPLUS-26.3-FIX.md) include the result markers and reproduction command.
+
+The native test uses an integrated server; the cross-version fixture uses a disposable native 26.3 loopback server. A particular multiplayer server's permissions, custom gamemode commands, packet restrictions, and interaction rules still determine which SongPlayer features can run there.
+
+The external server from the original report has not been retested.
