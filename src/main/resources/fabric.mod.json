@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "id": "songplayer",
   "version": "${version}",
-
   "name": "Song Player",
   "description": "A mod for building and playing noteblock songs in Minecraft",
   "authors": [
@@ -11,11 +10,9 @@
   "contact": {
     "sources": "https://github.com/hhhzzzsss/SongPlayer"
   },
-
   "license": "MIT",
   "icon": "assets/songplayer/icon.png",
-
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "main": [
       "com.github.hhhzzzsss.songplayer.SongPlayer"
@@ -24,12 +21,11 @@
   "mixins": [
     "songplayer.mixins.json"
   ],
-
   "depends": {
-    "fabricloader": ">=0.18.0",
-    "fabric": "*",
-    "minecraft": "~1.21.9",
-    "java": ">=21"
+    "fabricloader": ">=0.19.3",
+    "fabric-api": ">=0.160.0",
+    "minecraft": "~26.2",
+    "java": ">=25"
   },
   "suggests": {
     "flamingo": "*"
