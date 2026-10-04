@@ -63,6 +63,9 @@ public final class SongPlayerViaGameTest implements FabricClientGameTest {
         connect(context, address);
         verifyRotationOnlyControl(context);
         prepare(context);
+        verifyStopPlaybackHandoff(context, false, false);
+        verifyStopPlaybackHandoff(context, false, true);
+        verifyStopPlaybackHandoff(context, true, true);
         verifySong(context, false);
         verifySong(context, true);
         verifyStopDuringBuilding(context);
@@ -71,7 +74,8 @@ public final class SongPlayerViaGameTest implements FabricClientGameTest {
         System.out.println("SONGPLAYER_VIA_26_3_GAMETEST_PASS: Minecraft 26.2 + ViaFabricPlus target26.3; "
                 + "native strict duplicate-position disconnect reproduced; one position plus rotation-only control; "
                 + "rotate=false/true construction and real server note playback; fake player; vanilla teleport ACKs during building; "
-                + "automatic cleanup and original block/hotbar restoration; stop during building");
+                + "automatic cleanup and original block/hotbar restoration; stop during building; "
+                + "same-client-tick vanilla movement after stopping playback and aborting cleanup");
     }
 
     private static void configure() {
@@ -242,6 +246,69 @@ public final class SongPlayerViaGameTest implements FabricClientGameTest {
         await(context, "stopped fixture restores creative", client -> client.gameMode.getPlayerMode() == GameType.CREATIVE);
         verifyRestored(context, baseline, inventory);
         System.out.println("SONGPLAYER_VIA_STOP_DURING_BUILD_PASS");
+    }
+
+    private static void verifyStopPlaybackHandoff(ClientGameTestContext context, boolean autoCleanup, boolean rotate) {
+        Map<BlockPos, BlockState> baseline = context.computeOnClient(SongPlayerViaGameTest::snapshot);
+        List<ItemStack> inventory = context.computeOnClient(SongPlayerViaGameTest::hotbar);
+        context.runOnClient(client -> {
+            require(handler().isIdle(), "Previous fixture is active before stop handoff");
+            Config.getConfig().autoCleanup = autoCleanup;
+            Config.getConfig().rotate = rotate;
+            BlockEventProbe.reset();
+            ViaMovementProbe.reset();
+            handler().setSong(song("Via stop playback autoCleanup=" + autoCleanup + " rotate=" + rotate, 60000));
+        });
+        await(context, "handoff fixture reaches survival playback", client -> handler().currentSong != null
+                && !handler().building && client.gameMode.getPlayerMode() == GameType.SURVIVAL);
+        Set<BlockPos> notes = context.computeOnClient(client -> {
+            verifyStage(client);
+            require(handler().fakePlayer != null, "Stop handoff fixture lacks fake player");
+            return new HashSet<>(handler().stage.noteblockPositions.values());
+        });
+        await(context, "handoff fixture actually plays all notes before stop", client -> BlockEventProbe.playedAll(notes));
+        context.runOnClient(client -> {
+            require(!handler().building && handler().currentSong != null, "Stop must interrupt active playback");
+            ChatProbe.reset();
+            Connection connection = client.getConnection().getConnection();
+            // All operations share one client runnable: no vanilla tick-end can intervene.
+            // The raw tick-end marks the boundary; actual SongPlayer consumes its first position.
+            connection.send(ServerboundClientTickEndPacket.INSTANCE);
+            handler().stage.sendMovementPacketToStagePosition();
+            client.getConnection().sendChat("$stop");
+            if (autoCleanup) {
+                require(handler().cleaningUp && ChatProbe.hasOutput("Stopped playing and switched to cleanup"),
+                        "Playback stop did not enter cleanup");
+                // A second real stop interrupts cleanup before its first tick, another idle handoff.
+                client.getConnection().sendChat("$stop");
+                require(ChatProbe.hasOutput("Stopped cleanup"), "Second stop did not abort cleanup");
+            } else {
+                require(ChatProbe.hasOutput("Stopped playing"), "Stop without cleanup was not intercepted");
+                require(!ChatProbe.hasOutput("switched to cleanup"), "Cleanup ran while disabled");
+            }
+            require(handler().isIdle() && handler().fakePlayer == null, "Stop did not restore idle/fake-player state");
+            // LocalPlayer sends through the listener after the handler becomes idle. Before the
+            // fix this becomes a second position in the same protocol tick and native26.3 kicks.
+            client.getConnection().send(position(client));
+            connection.send(ServerboundClientTickEndPacket.INSTANCE);
+            System.out.println("SONGPLAYER_VIA_STOP_HANDOFF_SENT: autoCleanup=" + autoCleanup + " rotate=" + rotate + " " + ViaMovementProbe.diagnostics());
+        });
+        context.waitTicks(20);
+        requireConnected(context, "vanilla movement after stop in the same client tick; autoCleanup=" + autoCleanup + " rotate=" + rotate);
+        await(context, "stop restores original creative mode", client -> client.gameMode.getPlayerMode() == GameType.CREATIVE);
+        context.runOnClient(client -> {
+            require(handler().isIdle() && !handler().originalBlocks.isEmpty(), "Stopped stage must remain available for manual cleanup");
+            for (int slot = 0; slot < inventory.size(); slot++) {
+                require(ItemStack.matches(inventory.get(slot), client.player.getInventory().getItem(slot)),
+                        "Playback stop changed hotbar slot " + slot);
+            }
+            Config.getConfig().autoCleanup = true;
+            client.getConnection().sendChat("$cleanupLastStage");
+            require(handler().cleaningUp, "Manual cleanup did not start after playback stop");
+        });
+        await(context, "manual cleanup restores stopped stage", client -> handler().isIdle());
+        verifyRestored(context, baseline, inventory);
+        System.out.println("SONGPLAYER_VIA_STOP_HANDOFF_PASS: autoCleanup=" + autoCleanup + " rotate=" + rotate);
     }
 
     private static Song song(String name, long length) {
