@@ -4,46 +4,48 @@ import com.github.hhhzzzsss.songplayer.CommandProcessor;
 import com.github.hhhzzzsss.songplayer.Config;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import net.minecraft.client.gui.screen.ChatInputSuggestor;
-import net.minecraft.client.gui.widget.TextFieldWidget;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.client.gui.components.CommandSuggestions;
+import net.minecraft.client.gui.components.EditBox;
 
-@Mixin(ChatInputSuggestor.class)
+@Mixin(CommandSuggestions.class)
 public class ChatInputSuggestorMixin {
     @Shadow
-    CompletableFuture<Suggestions> pendingSuggestions;
+    private CompletableFuture<Suggestions> pendingSuggestions;
 
     @Shadow
-    private static int getStartOfCurrentWord(String input) {
+    private static int getLastWordIndex(String input) {
         return 0;
     }
 
     @Shadow
-    public void show(boolean narrateFirstSuggestion) {}
+    public void showSuggestions(boolean narrateFirstSuggestion) {}
 
     @Shadow
-    final TextFieldWidget textField;
+    @Final
+    private final EditBox input;
 
     public ChatInputSuggestorMixin() {
-        textField = null;
+        input = null;
     }
 
-    @Inject(at = @At("TAIL"), method = "refresh()V")
+    @Inject(at = @At("TAIL"), method = "updateCommandInfo()V")
     public void onRefresh(CallbackInfo ci) {
-        String textStr = this.textField.getText();
-        int cursorPos = this.textField.getCursor();
+        String textStr = this.input.getValue();
+        int cursorPos = this.input.getCursorPosition();
         String preStr = textStr.substring(0, cursorPos);
         if (!preStr.startsWith(Config.getConfig().prefix)) {
             return;
         }
 
-        int wordStart = getStartOfCurrentWord(preStr);
+        int wordStart = getLastWordIndex(preStr);
         CompletableFuture<Suggestions> suggestions;
         try {
             suggestions = CommandProcessor.handleSuggestions(preStr, new SuggestionsBuilder(preStr, wordStart));
@@ -53,7 +55,7 @@ public class ChatInputSuggestorMixin {
         }
         if (suggestions != null) {
             this.pendingSuggestions = suggestions;
-            this.show(true);
+            this.showSuggestions(true);
         }
     }
 }
